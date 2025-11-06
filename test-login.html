@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Login - Audia</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2563eb;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #333;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .result.success {
+            background: #dcfce7;
+            border: 1px solid #86efac;
+            color: #166534;
+        }
+        .result.error {
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+            color: #991b1b;
+        }
+        .info {
+            background: #eff6ff;
+            border: 1px solid #93c5fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            color: #1e40af;
+        }
+        pre {
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ Teste de Login - Audia</h1>
+
+        <div class="info">
+            <strong>Instruções:</strong><br>
+            1. Primeiro, registre um usuário<br>
+            2. Depois, faça login com o mesmo usuário
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email:</label>
+            <input type="email" id="email" value="teste@exemplo.com" placeholder="seu@email.com">
+        </div>
+
+        <div class="form-group">
+            <label for="username">Username:</label>
+            <input type="text" id="username" value="teste" placeholder="usuario">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Senha:</label>
+            <input type="password" id="password" value="senha12345" placeholder="senha">
+        </div>
+
+        <button onclick="register()">Registrar</button>
+        <button onclick="login()">Login</button>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/v1';
+
+        function showResult(message, isSuccess) {
+            const result = document.getElementById('result');
+            result.className = 'result ' + (isSuccess ? 'success' : 'error');
+            result.innerHTML = message;
+            result.style.display = 'block';
+        }
+
+        async function register() {
+            const email = document.getElementById('email').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!email || !username || !password) {
+                showResult('Por favor, preencha todos os campos', false);
+                return;
+            }
+
+            if (password.length < 8) {
+                showResult('Senha deve ter no mínimo 8 caracteres', false);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, username, password }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Erro ao registrar');
+                }
+
+                showResult(`
+                    <strong>✅ Registro bem-sucedido!</strong><br><br>
+                    <strong>Tokens recebidos:</strong><br>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                    <br>
+                    Agora você pode fazer login!
+                `, true);
+
+            } catch (error) {
+                showResult(`❌ Erro: ${error.message}`, false);
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            if (!email || !password) {
+                showResult('Por favor, preencha email e senha', false);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Erro ao fazer login');
+                }
+
+                // Salvar tokens
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+
+                // Buscar dados do usuário
+                const meResponse = await fetch(`${API_URL}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${data.access_token}`,
+                    },
+                });
+
+                const userData = await meResponse.json();
+
+                showResult(`
+                    <strong>✅ Login bem-sucedido!</strong><br><br>
+                    <strong>Tokens recebidos:</strong><br>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                    <br>
+                    <strong>Dados do usuário:</strong><br>
+                    <pre>${JSON.stringify(userData, null, 2)}</pre>
+                    <br>
+                    Tokens salvos em localStorage!<br>
+                    Você pode acessar <a href="http://localhost:3000" target="_blank">http://localhost:3000</a>
+                `, true);
+
+            } catch (error) {
+                showResult(`❌ Erro: ${error.message}`, false);
+            }
+        }
+
+        // Verificar se já está logado
+        window.onload = function() {
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                showResult('ℹ️ Você já tem um token salvo em localStorage', true);
+            }
+        };
+    </script>
+</body>
+</html>

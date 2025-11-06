@@ -1,0 +1,10 @@
+{
+  "name": "Audia - Transcrição com IA",
+  "short_name": "Audia",
+  "description": "Transcreva áudios e vídeos com diarização, chat inteligente e resumos automáticos",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "icons": []
+}
