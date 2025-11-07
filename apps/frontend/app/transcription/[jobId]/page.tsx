@@ -190,7 +190,7 @@ export default function TranscriptionPage() {
         // Atualizar speakers com os novos nomes
         updatedTranscription.speakers = transcription.speakers.map(speaker => ({
           ...speaker,
-          texts: speaker.texts.map(text =>
+          texts: speaker.texts.map((text: string) =>
             text.replace(
               `Speaker ${speaker.speaker_id}`,
               speakerNames[speaker.speaker_id.toString()] || `Speaker ${speaker.speaker_id}`
