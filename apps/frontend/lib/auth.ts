@@ -37,7 +37,7 @@ export async function login(email: string, password: string): Promise<User> {
 
   // Buscar dados do usuário com o token explícito usando axios puro
   console.log('👤 Buscando dados do usuário...');
-  const userResponse = await axios.get(`${API_URL}/v1/auth/me`, {
+  const userResponse = await axios.get(`${API_URL}/auth/me`, {
     headers: {
       Authorization: `Bearer ${tokens.access_token}`,
     },
@@ -71,7 +71,7 @@ export async function register(
 
   // Buscar dados do usuário com o token explícito usando axios puro
   console.log('👤 Buscando dados do usuário...');
-  const userResponse = await axios.get(`${API_URL}/v1/auth/me`, {
+  const userResponse = await axios.get(`${API_URL}/auth/me`, {
     headers: {
       Authorization: `Bearer ${tokens.access_token}`,
     },
