@@ -36,12 +36,31 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
   const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
     onDrop,
     accept: {
-      'audio/*': ['.mp3', '.wav', '.m4a', '.aac', '.ogg'],
-      'video/*': ['.mp4', '.mov', '.avi', '.webm'],
+      'audio/mpeg': ['.mp3'],
+      'audio/wav': ['.wav'],
+      'audio/mp4': ['.m4a'],
+      'audio/aac': ['.aac'],
+      'audio/ogg': ['.ogg'],
+      'video/mp4': ['.mp4'],
+      'video/quicktime': ['.mov'],
+      'video/x-msvideo': ['.avi'],
+      'video/webm': ['.webm'],
     },
     maxSize: 500 * 1024 * 1024, // 500MB
     maxFiles: 1,
     disabled: uploading,
+    validator: (file) => {
+      // Validação adicional por extensão (fallback se MIME type falhar)
+      const ext = file.name.toLowerCase().split('.').pop()
+      const allowedExts = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'mp4', 'mov', 'avi', 'webm']
+      if (!ext || !allowedExts.includes(ext)) {
+        return {
+          code: 'invalid-extension',
+          message: `Extensão .${ext} não permitida. Use: ${allowedExts.join(', ')}`
+        }
+      }
+      return null
+    },
   })
 
   return (
