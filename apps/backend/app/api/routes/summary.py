@@ -3,6 +3,7 @@ Rota para geração de resumos de transcrições.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -10,6 +11,7 @@ from app.core.database import get_db, User, Job
 from app.core.auth import get_current_user
 from app.workers.tasks import generate_summary_task
 from app.models.schemas import SummaryResponse, GenerateSummaryRequest
+from app.services.azure_openai import azure_openai_service
 
 router = APIRouter()
 
@@ -202,3 +204,84 @@ async def delete_summary(
     logger.info(f"Resumo deletado para job {job_id}")
 
     return {"message": "Resumo deletado com sucesso"}
+
+
+@router.get("/{job_id}/download")
+async def download_summary_docx(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Faz download do resumo em formato .docx formatado.
+
+    Args:
+        job_id: ID do job
+        current_user: Usuário autenticado
+        db: Sessão do banco
+
+    Returns:
+        Arquivo .docx com o resumo formatado
+
+    Raises:
+        HTTPException 404: Se job não existir ou resumo não foi gerado
+        HTTPException 403: Se usuário não tiver acesso
+    """
+    # Buscar job
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job não encontrado"
+        )
+
+    # Verificar permissão
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado"
+        )
+
+    # Verificar se transcrição está completa
+    if job.status != "COMPLETED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Transcrição ainda não foi concluída"
+        )
+
+    # Verificar se resumo existe
+    if not job.summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resumo ainda não foi gerado. Use POST /v1/summary/{job_id} para gerar."
+        )
+
+    try:
+        # Gerar documento .docx
+        docx_buffer = azure_openai_service.generate_summary_docx(
+            summary_text=job.summary,
+            filename=job.filename
+        )
+
+        # Nome do arquivo de saída
+        safe_filename = job.filename.rsplit('.', 1)[0] if '.' in job.filename else job.filename
+        output_filename = f"resumo_{safe_filename}.docx"
+
+        logger.info(f"Enviando resumo .docx para job {job_id}")
+
+        # Retornar como download
+        return StreamingResponse(
+            docx_buffer,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{output_filename}\""
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Erro ao gerar .docx para download: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro ao gerar documento .docx"
+        )

@@ -3,6 +3,7 @@ Rota para geração de atas de reunião de transcrições.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from loguru import logger
 import json
@@ -15,6 +16,7 @@ from app.models.schemas import (
     GenerateMeetingMinutesRequest,
     MeetingMinutesData
 )
+from app.services.azure_openai import azure_openai_service
 
 router = APIRouter()
 
@@ -221,3 +223,87 @@ async def delete_meeting_minutes(
     logger.info(f"Ata de reunião deletada para job {job_id}")
 
     return {"message": "Ata de reunião deletada com sucesso"}
+
+
+@router.get("/{job_id}/download")
+async def download_meeting_minutes_docx(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Faz download da ata de reunião em formato .docx formatado.
+
+    Args:
+        job_id: ID do job
+        current_user: Usuário autenticado
+        db: Sessão do banco
+
+    Returns:
+        Arquivo .docx com a ata formatada
+
+    Raises:
+        HTTPException 404: Se job não existir ou ata não foi gerada
+        HTTPException 403: Se usuário não tiver acesso
+    """
+    # Buscar job
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job não encontrado"
+        )
+
+    # Verificar permissão
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado"
+        )
+
+    # Verificar se transcrição está completa
+    if job.status != "COMPLETED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Transcrição ainda não foi concluída"
+        )
+
+    # Verificar se ata existe
+    if not job.meeting_minutes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ata ainda não foi gerada. Use POST /v1/meeting-minutes/{job_id} para gerar."
+        )
+
+    try:
+        # Parse JSON da ata
+        minutes_data = json.loads(job.meeting_minutes)
+
+        # Gerar documento .docx
+        docx_buffer = azure_openai_service.generate_meeting_minutes_docx(
+            minutes_data=minutes_data,
+            filename=job.filename
+        )
+
+        # Nome do arquivo de saída
+        safe_filename = job.filename.rsplit('.', 1)[0] if '.' in job.filename else job.filename
+        output_filename = f"ata_{safe_filename}.docx"
+
+        logger.info(f"Enviando ata .docx para job {job_id}")
+
+        # Retornar como download
+        return StreamingResponse(
+            docx_buffer,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{output_filename}\""
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Erro ao gerar .docx da ata para download: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro ao gerar documento .docx da ata"
+        )

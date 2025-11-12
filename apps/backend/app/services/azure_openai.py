@@ -10,6 +10,11 @@ from typing import List, Dict, Any, Optional
 from openai import AzureOpenAI
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
+from docx import Document
+from docx.shared import Pt, RGBColor, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from io import BytesIO
+from datetime import datetime
 
 from app.core.config import settings
 
@@ -108,11 +113,11 @@ class AzureOpenAIService:
     def summarize(
         self,
         transcript: str,
-        max_tokens: int = 500,
+        max_tokens: int = 2000,
         temperature: float = 0.3
     ) -> str:
         """
-        Gera um resumo conciso de uma transcrição.
+        Gera um resumo detalhado de uma transcrição.
 
         Args:
             transcript: Texto completo da transcrição
@@ -123,20 +128,28 @@ class AzureOpenAIService:
             Resumo em linguagem natural
         """
         system_prompt = """Você é um assistente especializado em resumir transcrições de áudio.
-Crie resumos concisos, informativos e bem estruturados.
+Crie resumos DETALHADOS, informativos e bem estruturados.
 
 Diretrizes:
 - Use linguagem clara e objetiva
-- Destaque os pontos principais
+- Crie um resumo COMPLETO e DETALHADO, não apenas os pontos principais
+- Organize em seções com títulos quando apropriado
+- Inclua todos os tópicos importantes discutidos
 - Mantenha a ordem cronológica quando relevante
-- Use bullet points se apropriado
+- Use bullet points para listar itens
+- Destaque decisões, ações e próximos passos
+- Identifique os participantes quando mencionados
+- Inclua contexto e detalhes relevantes
 - Seja neutro e factual"""
 
-        user_prompt = f"""Por favor, resuma a seguinte transcrição:
+        user_prompt = f"""Por favor, crie um resumo DETALHADO e COMPLETO da seguinte transcrição.
+O resumo deve cobrir todos os tópicos importantes discutidos, não apenas um overview.
+
+Transcrição:
 
 {transcript}
 
-Resumo:"""
+Resumo Detalhado:"""
 
         try:
             logger.info("Gerando resumo da transcrição")
@@ -286,11 +299,11 @@ Título:"""
     def generate_meeting_minutes(
         self,
         transcript: str,
-        max_tokens: int = 1500,
+        max_tokens: int = 3000,
         temperature: float = 0.3
     ) -> Dict[str, Any]:
         """
-        Gera uma ata de reunião estruturada a partir de uma transcrição.
+        Gera uma ata de reunião DETALHADA e estruturada a partir de uma transcrição.
 
         Args:
             transcript: Texto completo da transcrição
@@ -308,37 +321,43 @@ Título:"""
                 "next_steps": [str]
             }
         """
-        system_prompt = """Você é um assistente especializado em criar atas de reunião profissionais.
-Analise transcrições e gere atas estruturadas e organizadas.
+        system_prompt = """Você é um assistente especializado em criar atas de reunião profissionais DETALHADAS.
+Analise transcrições e gere atas estruturadas, organizadas e COMPLETAS com TODOS os detalhes relevantes.
 
 IMPORTANTE: Sua resposta deve ser um JSON válido com a seguinte estrutura:
 {
     "title": "Título descritivo da reunião",
-    "summary": "Resumo executivo em 2-3 sentenças",
+    "summary": "Resumo executivo DETALHADO em 4-6 sentenças cobrindo os principais pontos e contexto",
     "topics": [
-        {"topic": "Nome do tópico", "discussion": "Resumo da discussão"}
+        {"topic": "Nome do tópico", "discussion": "Descrição DETALHADA da discussão com contexto completo, pontos levantados e conclusões"}
     ],
     "action_items": [
-        {"item": "Descrição da ação", "responsible": "Nome ou 'A definir'", "deadline": "Data ou 'A definir'"}
+        {"item": "Descrição DETALHADA da ação com contexto e objetivo", "responsible": "Nome ou 'A definir'", "deadline": "Data ou 'A definir'"}
     ],
-    "decisions": ["Decisão tomada 1", "Decisão tomada 2"],
-    "next_steps": ["Próximo passo 1", "Próximo passo 2"]
+    "decisions": ["Decisão tomada com contexto e justificativa"],
+    "next_steps": ["Próximo passo com detalhes de execução"]
 }
 
 Diretrizes:
-- Identifique todos os itens de ação mencionados
-- Extraia decisões importantes
-- Liste próximos passos discutidos
-- Use linguagem clara e profissional
+- Crie atas COMPLETAS e DETALHADAS, não resumidas
+- Identifique TODOS os itens de ação mencionados com descrições completas
+- Extraia TODAS as decisões importantes com contexto
+- Liste TODOS os próximos passos discutidos com detalhes
+- Para cada tópico, inclua discussão DETALHADA com todos os pontos relevantes
+- Use linguagem clara, profissional e descritiva
+- Mantenha a ordem cronológica dos tópicos quando relevante
+- Inclua contexto e justificativas para decisões e ações
+- Identifique os participantes quando mencionados
 - Se não houver informação para uma seção, use array vazio []
 - Se responsável ou prazo não foram mencionados, use "A definir"
 - Retorne APENAS o JSON, sem texto adicional"""
 
-        user_prompt = f"""Por favor, gere uma ata de reunião para a seguinte transcrição:
+        user_prompt = f"""Por favor, gere uma ata de reunião DETALHADA e COMPLETA para a seguinte transcrição.
+A ata deve incluir TODOS os tópicos discutidos, TODAS as decisões tomadas, TODOS os itens de ação e TODOS os próximos passos.
 
 {transcript}
 
-Ata (JSON):"""
+Ata Detalhada (JSON):"""
 
         try:
             logger.info("Gerando ata de reunião")
@@ -384,6 +403,315 @@ Ata (JSON):"""
             Número estimado de tokens
         """
         return len(text) // 4
+
+    def generate_summary_docx(
+        self,
+        summary_text: str,
+        filename: str,
+        transcript_preview: Optional[str] = None
+    ) -> BytesIO:
+        """
+        Gera um documento .docx formatado com o resumo da transcrição.
+
+        Args:
+            summary_text: Texto do resumo
+            filename: Nome do arquivo original
+            transcript_preview: Preview da transcrição (opcional)
+
+        Returns:
+            BytesIO com o documento .docx
+        """
+        try:
+            logger.info("Gerando documento .docx formatado")
+
+            # Criar documento
+            doc = Document()
+
+            # Configurar margens
+            sections = doc.sections
+            for section in sections:
+                section.top_margin = Inches(1)
+                section.bottom_margin = Inches(1)
+                section.left_margin = Inches(1)
+                section.right_margin = Inches(1)
+
+            # Título
+            title = doc.add_heading('Resumo Detalhado da Transcrição', 0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_format = title.runs[0].font
+            title_format.size = Pt(18)
+            title_format.bold = True
+            title_format.color.rgb = RGBColor(0, 51, 102)
+
+            # Informações do documento
+            doc.add_paragraph()
+            info_table = doc.add_table(rows=2, cols=2)
+            info_table.style = 'Light Grid Accent 1'
+
+            # Arquivo
+            info_table.rows[0].cells[0].text = 'Arquivo:'
+            info_table.rows[0].cells[1].text = filename
+
+            # Data
+            info_table.rows[1].cells[0].text = 'Data de geração:'
+            info_table.rows[1].cells[1].text = datetime.now().strftime('%d/%m/%Y %H:%M')
+
+            # Estilizar células da tabela
+            for row in info_table.rows:
+                for cell in row.cells:
+                    cell.paragraphs[0].runs[0].font.size = Pt(10)
+                row.cells[0].paragraphs[0].runs[0].font.bold = True
+
+            # Espaço
+            doc.add_paragraph()
+
+            # Seção de Resumo
+            heading = doc.add_heading('Resumo', level=1)
+            heading_format = heading.runs[0].font
+            heading_format.color.rgb = RGBColor(0, 51, 102)
+
+            # Processar o texto do resumo
+            # Dividir em linhas e processar formatação
+            lines = summary_text.split('\n')
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    doc.add_paragraph()
+                    continue
+
+                # Detectar se é um título (linha que termina com : ou começa com ##)
+                if line.startswith('##'):
+                    # Título de seção
+                    title_text = line.replace('##', '').strip()
+                    section_heading = doc.add_heading(title_text, level=2)
+                    section_heading.runs[0].font.color.rgb = RGBColor(0, 102, 204)
+                elif line.endswith(':') and len(line) < 80:
+                    # Possível título de seção
+                    p = doc.add_paragraph(line)
+                    p.runs[0].font.bold = True
+                    p.runs[0].font.size = Pt(12)
+                    p.runs[0].font.color.rgb = RGBColor(0, 51, 102)
+                elif line.startswith('- ') or line.startswith('• '):
+                    # Item de lista
+                    text = line.lstrip('- •').strip()
+                    p = doc.add_paragraph(text, style='List Bullet')
+                    p.runs[0].font.size = Pt(11)
+                elif line.startswith('*') and line.endswith('*'):
+                    # Texto em itálico
+                    text = line.strip('*').strip()
+                    p = doc.add_paragraph(text)
+                    p.runs[0].font.italic = True
+                    p.runs[0].font.size = Pt(11)
+                else:
+                    # Parágrafo normal
+                    p = doc.add_paragraph(line)
+                    p.runs[0].font.size = Pt(11)
+                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+            # Rodapé
+            doc.add_paragraph()
+            doc.add_paragraph()
+            footer = doc.add_paragraph('_______________________________________________')
+            footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            footer_text = doc.add_paragraph('Documento gerado automaticamente pelo Audia')
+            footer_text.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            footer_text.runs[0].font.size = Pt(9)
+            footer_text.runs[0].font.italic = True
+            footer_text.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+            # Salvar em BytesIO
+            docx_buffer = BytesIO()
+            doc.save(docx_buffer)
+            docx_buffer.seek(0)
+
+            logger.info("Documento .docx gerado com sucesso")
+
+            return docx_buffer
+
+        except Exception as e:
+            logger.error(f"Erro ao gerar documento .docx: {str(e)}")
+            raise
+
+    def generate_meeting_minutes_docx(
+        self,
+        minutes_data: Dict[str, Any],
+        filename: str
+    ) -> BytesIO:
+        """
+        Gera um documento .docx formatado com a ata de reunião.
+
+        Args:
+            minutes_data: Dicionário com os dados da ata contendo:
+                - title: Título da reunião
+                - summary: Resumo executivo
+                - topics: Lista de tópicos [{topic, discussion}]
+                - action_items: Lista de ações [{item, responsible, deadline}]
+                - decisions: Lista de decisões
+                - next_steps: Lista de próximos passos
+            filename: Nome do arquivo original da transcrição
+
+        Returns:
+            BytesIO com o documento .docx gerado
+        """
+        try:
+            logger.info("Gerando documento .docx da ata de reunião")
+
+            # Criar documento
+            doc = Document()
+
+            # Configurar margens
+            sections = doc.sections
+            for section in sections:
+                section.top_margin = Inches(1)
+                section.bottom_margin = Inches(1)
+                section.left_margin = Inches(1)
+                section.right_margin = Inches(1)
+
+            # Título principal
+            title = doc.add_heading('Ata de Reunião', 0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_format = title.runs[0].font
+            title_format.size = Pt(20)
+            title_format.bold = True
+            title_format.color.rgb = RGBColor(0, 51, 102)
+
+            # Subtítulo com título da reunião
+            if minutes_data.get('title'):
+                subtitle = doc.add_heading(minutes_data['title'], level=1)
+                subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                subtitle_format = subtitle.runs[0].font
+                subtitle_format.size = Pt(16)
+                subtitle_format.color.rgb = RGBColor(0, 102, 153)
+
+            doc.add_paragraph()
+
+            # Informações do documento com tabela
+            info_table = doc.add_table(rows=2, cols=2)
+            info_table.style = 'Light Grid Accent 1'
+
+            info_table.rows[0].cells[0].text = 'Arquivo de origem:'
+            info_table.rows[0].cells[1].text = filename
+            info_table.rows[1].cells[0].text = 'Data de geração:'
+            info_table.rows[1].cells[1].text = datetime.now().strftime('%d/%m/%Y %H:%M')
+
+            # Aplicar negrito às labels
+            for i in range(2):
+                info_table.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
+
+            doc.add_paragraph()
+
+            # Resumo Executivo
+            if minutes_data.get('summary'):
+                doc.add_heading('Resumo Executivo', level=1)
+                summary_para = doc.add_paragraph(minutes_data['summary'])
+                summary_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                for run in summary_para.runs:
+                    run.font.size = Pt(11)
+                doc.add_paragraph()
+
+            # Tópicos Discutidos
+            if minutes_data.get('topics') and len(minutes_data['topics']) > 0:
+                doc.add_heading('Tópicos Discutidos', level=1)
+
+                for idx, topic in enumerate(minutes_data['topics'], 1):
+                    # Título do tópico
+                    topic_heading = doc.add_heading(f"{idx}. {topic.get('topic', 'Tópico sem título')}", level=2)
+                    topic_heading.runs[0].font.color.rgb = RGBColor(0, 102, 153)
+
+                    # Discussão
+                    discussion_para = doc.add_paragraph(topic.get('discussion', ''))
+                    discussion_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    for run in discussion_para.runs:
+                        run.font.size = Pt(11)
+
+                    doc.add_paragraph()
+
+            # Decisões Tomadas
+            if minutes_data.get('decisions') and len(minutes_data['decisions']) > 0:
+                doc.add_heading('Decisões Tomadas', level=1)
+
+                for decision in minutes_data['decisions']:
+                    p = doc.add_paragraph(decision, style='List Bullet')
+                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    for run in p.runs:
+                        run.font.size = Pt(11)
+
+                doc.add_paragraph()
+
+            # Itens de Ação
+            if minutes_data.get('action_items') and len(minutes_data['action_items']) > 0:
+                doc.add_heading('Itens de Ação', level=1)
+
+                # Criar tabela para itens de ação
+                action_table = doc.add_table(rows=1, cols=3)
+                action_table.style = 'Light Grid Accent 1'
+
+                # Cabeçalho da tabela
+                header_cells = action_table.rows[0].cells
+                header_cells[0].text = 'Ação'
+                header_cells[1].text = 'Responsável'
+                header_cells[2].text = 'Prazo'
+
+                # Aplicar formatação ao cabeçalho
+                for cell in header_cells:
+                    cell.paragraphs[0].runs[0].font.bold = True
+                    cell.paragraphs[0].runs[0].font.size = Pt(11)
+                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                # Adicionar itens de ação
+                for action_item in minutes_data['action_items']:
+                    row_cells = action_table.add_row().cells
+                    row_cells[0].text = action_item.get('item', '')
+                    row_cells[1].text = action_item.get('responsible', 'A definir')
+                    row_cells[2].text = action_item.get('deadline', 'A definir')
+
+                    # Formatação das células
+                    for cell in row_cells:
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                run.font.size = Pt(10)
+
+                doc.add_paragraph()
+
+            # Próximos Passos
+            if minutes_data.get('next_steps') and len(minutes_data['next_steps']) > 0:
+                doc.add_heading('Próximos Passos', level=1)
+
+                for step in minutes_data['next_steps']:
+                    p = doc.add_paragraph(step, style='List Bullet')
+                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    for run in p.runs:
+                        run.font.size = Pt(11)
+
+                doc.add_paragraph()
+
+            # Adicionar quebra de página antes do rodapé se houver muito conteúdo
+            doc.add_page_break()
+
+            # Rodapé
+            footer = doc.add_paragraph()
+            footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            footer_text = doc.add_paragraph('Ata gerada automaticamente pelo Audia')
+            footer_text.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            footer_text.runs[0].font.size = Pt(9)
+            footer_text.runs[0].font.italic = True
+            footer_text.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+            # Salvar em BytesIO
+            docx_buffer = BytesIO()
+            doc.save(docx_buffer)
+            docx_buffer.seek(0)
+
+            logger.info("Documento .docx da ata gerado com sucesso")
+
+            return docx_buffer
+
+        except Exception as e:
+            logger.error(f"Erro ao gerar documento .docx da ata: {str(e)}")
+            raise
 
 
 # Instância global do serviço

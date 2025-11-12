@@ -31,6 +31,8 @@ export default function TranscriptionPage() {
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [loadingMinutes, setLoadingMinutes] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [downloadingSummary, setDownloadingSummary] = useState(false)
+  const [downloadingMinutes, setDownloadingMinutes] = useState(false)
   const [activeTab, setActiveTab] = useState<'transcription' | 'chat'>('transcription')
   const [summaryExpanded, setSummaryExpanded] = useState(true)
   const [minutesExpanded, setMinutesExpanded] = useState(true)
@@ -152,6 +154,98 @@ export default function TranscriptionPage() {
     } catch (error) {
       console.error('Erro ao gerar ata de reunião:', error)
       setLoadingMinutes(false)
+    }
+  }
+
+  const downloadSummaryDocx = async () => {
+    setDownloadingSummary(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/summary/${jobId}/download`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Erro ao fazer download do resumo')
+      }
+
+      // Obter o blob do arquivo
+      const blob = await response.blob()
+
+      // Criar URL temporária e fazer download
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+
+      // Extrair nome do arquivo do header Content-Disposition ou usar nome padrão
+      const contentDisposition = response.headers.get('Content-Disposition')
+      let filename = 'resumo.docx'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/)
+        if (filenameMatch) {
+          filename = filenameMatch[1]
+        }
+      }
+
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Erro ao fazer download do resumo:', error)
+      alert('Erro ao fazer download do resumo')
+    } finally {
+      setDownloadingSummary(false)
+    }
+  }
+
+  const downloadMeetingMinutesDocx = async () => {
+    setDownloadingMinutes(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/meeting-minutes/${jobId}/download`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Erro ao fazer download da ata')
+      }
+
+      // Obter o blob do arquivo
+      const blob = await response.blob()
+
+      // Criar URL temporária e fazer download
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+
+      // Extrair nome do arquivo do header Content-Disposition ou usar nome padrão
+      const contentDisposition = response.headers.get('Content-Disposition')
+      let filename = 'ata.docx'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/)
+        if (filenameMatch) {
+          filename = filenameMatch[1]
+        }
+      }
+
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Erro ao fazer download da ata:', error)
+      alert('Erro ao fazer download da ata')
+    } finally {
+      setDownloadingMinutes(false)
     }
   }
 
@@ -469,21 +563,40 @@ export default function TranscriptionPage() {
             </h3>
             <div className="flex items-center gap-2">
               {summary && !loadingSummary && (
-                <button
-                  onClick={() => setSummaryExpanded(!summaryExpanded)}
-                  className="btn-ghost btn-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-                  title={summaryExpanded ? 'Minimizar' : 'Expandir'}
-                >
-                  {summaryExpanded ? (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  )}
-                </button>
+                <>
+                  <button
+                    onClick={downloadSummaryDocx}
+                    disabled={downloadingSummary}
+                    className="btn-primary btn-sm"
+                    title="Baixar resumo em .docx"
+                  >
+                    {downloadingSummary ? (
+                      <>
+                        <span className="spinner w-4 h-4 mr-2"></span>
+                        Baixando...
+                      </>
+                    ) : (
+                      <>
+                        📥 Baixar .doc
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setSummaryExpanded(!summaryExpanded)}
+                    className="btn-ghost btn-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                    title={summaryExpanded ? 'Minimizar' : 'Expandir'}
+                  >
+                    {summaryExpanded ? (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
+                  </button>
+                </>
               )}
               {!summary && !loadingSummary && (
                 <button
@@ -523,21 +636,40 @@ export default function TranscriptionPage() {
             </h3>
             <div className="flex items-center gap-2">
               {meetingMinutes && !loadingMinutes && (
-                <button
-                  onClick={() => setMinutesExpanded(!minutesExpanded)}
-                  className="btn-ghost btn-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-                  title={minutesExpanded ? 'Minimizar' : 'Expandir'}
-                >
-                  {minutesExpanded ? (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  )}
-                </button>
+                <>
+                  <button
+                    onClick={downloadMeetingMinutesDocx}
+                    disabled={downloadingMinutes}
+                    className="btn-primary btn-sm"
+                    title="Baixar ata em .docx"
+                  >
+                    {downloadingMinutes ? (
+                      <>
+                        <span className="spinner w-4 h-4 mr-2"></span>
+                        Baixando...
+                      </>
+                    ) : (
+                      <>
+                        📥 Baixar .doc
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setMinutesExpanded(!minutesExpanded)}
+                    className="btn-ghost btn-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                    title={minutesExpanded ? 'Minimizar' : 'Expandir'}
+                  >
+                    {minutesExpanded ? (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
+                  </button>
+                </>
               )}
               {!meetingMinutes && !loadingMinutes && (
                 <button
