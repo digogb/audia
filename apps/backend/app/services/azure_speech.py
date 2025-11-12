@@ -333,7 +333,18 @@ class AzureSpeechService:
                 }
                 result["speakers"].append(speaker_entry)
 
-            speaker_entry["texts"].append(text)
+            # Adicionar texto com prefixo do speaker
+            text_with_speaker = f"Speaker {speaker}: {text}"
+            speaker_entry["texts"].append(text_with_speaker)
+
+        # Reconstruir full_text com prefixos de speakers
+        if result["phrases"]:
+            full_text_parts = []
+            for phrase in result["phrases"]:
+                speaker_id = phrase["speaker"]
+                text = phrase["text"]
+                full_text_parts.append(f"Speaker {speaker_id}: {text}")
+            result["full_text"] = " ".join(full_text_parts)
 
         return result
 

@@ -35,8 +35,12 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // Se erro 401 e não é tentativa de retry
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Não tentar refresh em rotas de autenticação
+    const authRoutes = ['/auth/login', '/auth/register', '/auth/refresh'];
+    const isAuthRoute = authRoutes.some(route => originalRequest.url?.includes(route));
+
+    // Se erro 401 e não é tentativa de retry e não é rota de auth
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       originalRequest._retry = true;
 
       try {

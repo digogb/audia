@@ -12,6 +12,7 @@ from loguru import logger
 from app.core.database import get_db, User, Job
 from app.core.auth import get_current_user
 from app.services.storage_oci import oci_storage_service
+from app.services.embeddings import embeddings_service
 from app.models.schemas import (
     TranscriptionResponse,
     TranscriptionPhrase,
@@ -99,6 +100,9 @@ async def get_transcription(
         for speaker in transcription_data.get("speakers", [])
     ]
 
+    # Usar texto editado se existir, caso contrário usar o original
+    full_text = job.edited_transcription if job.edited_transcription else transcription_data.get("full_text", "")
+
     # Aplicar nomes customizados de speakers se existirem
     if job.speaker_names:
         try:
@@ -119,12 +123,16 @@ async def get_transcription(
                     ]
                     logger.info(f"Textos após substituição: {speaker.texts}")
 
+            # Atualizar também o full_text com os nomes customizados
+            for speaker_id_str, custom_name in custom_names.items():
+                speaker_id = speaker_id_str
+                old_name = f"Speaker {speaker_id}"
+                logger.info(f"Substituindo '{old_name}' por '{custom_name}' no full_text")
+                full_text = full_text.replace(old_name, custom_name)
+
             logger.info(f"Speakers após modificação: {[{'id': s.speaker_id, 'texts': s.texts} for s in speakers]}")
         except json.JSONDecodeError:
             logger.warning(f"Erro ao parsear speaker_names para job {job_id}")
-
-    # Usar texto editado se existir, caso contrário usar o original
-    full_text = job.edited_transcription if job.edited_transcription else transcription_data.get("full_text", "")
 
     return TranscriptionResponse(
         job_id=job.id,
@@ -356,6 +364,30 @@ async def update_speaker_names(
     db.refresh(job)
     logger.info(f"Valor após commit: {job.speaker_names}")
     logger.info(f"✅ Nomes de speakers salvos com sucesso para job {job_id}")
+
+    # Recriar índice FAISS com os nomes atualizados
+    try:
+        logger.info(f"Recriando índice FAISS para job {job_id} com nomes atualizados...")
+
+        # Obter texto com nomes customizados aplicados
+        transcription_text = job.edited_transcription if job.edited_transcription else job.transcription_text
+        if transcription_text and job.speaker_names:
+            custom_names = json.loads(job.speaker_names)
+            for speaker_id_str, custom_name in custom_names.items():
+                old_name = f"Speaker {speaker_id_str}"
+                transcription_text = transcription_text.replace(old_name, custom_name)
+
+        # Recriar índice
+        if transcription_text:
+            embeddings_service.create_index_for_job(
+                job_id=job_id,
+                text=transcription_text,
+                metadata={"filename": job.filename}
+            )
+            logger.info(f"✅ Índice FAISS recriado com sucesso para job {job_id}")
+    except Exception as e:
+        logger.error(f"Erro ao recriar índice FAISS: {str(e)}")
+        # Não falhar a requisição se o índice falhar, apenas logar o erro
 
     return UpdateTranscriptionResponse(
         job_id=job_id,

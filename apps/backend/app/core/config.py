@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = Field(default=500, description="Tamanho máximo de upload em MB")
     MAX_UPLOADS_PER_HOUR: int = Field(default=3, description="Máximo de uploads por hora")
     ALLOWED_EXTENSIONS: str = Field(
-        default="mp3,wav,mp4,m4a,avi,mov,webm",
+        default="mp3,wav,mp4,m4a,avi,mov,webm,asf",
         description="Extensões permitidas (separadas por vírgula)"
     )
 

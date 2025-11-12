@@ -5,6 +5,7 @@ Rota de chat/RAG sobre transcrições.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from loguru import logger
+import json
 
 from app.core.database import get_db, User, Job
 from app.core.auth import get_current_user
@@ -13,6 +14,33 @@ from app.services.azure_openai import azure_openai_service
 from app.models.schemas import ChatRequest, ChatResponse
 
 router = APIRouter()
+
+
+def get_transcription_text_with_custom_names(job: Job) -> str:
+    """
+    Retorna o texto da transcrição com nomes customizados aplicados.
+
+    Usa edited_transcription se existir, senão usa transcription_text.
+    Se houver speaker_names customizados, aplica as substituições.
+    """
+    # Usar texto editado se existir, caso contrário usar o original
+    text = job.edited_transcription if job.edited_transcription else job.transcription_text
+
+    # Aplicar nomes customizados de speakers se existirem
+    if job.speaker_names:
+        try:
+            custom_names = json.loads(job.speaker_names)
+            logger.info(f"Aplicando nomes customizados ao contexto do chat: {custom_names}")
+
+            # Substituir "Speaker X" pelos nomes customizados
+            for speaker_id_str, custom_name in custom_names.items():
+                old_name = f"Speaker {speaker_id_str}"
+                text = text.replace(old_name, custom_name)
+                logger.debug(f"Substituído '{old_name}' por '{custom_name}' no contexto")
+        except json.JSONDecodeError:
+            logger.warning(f"Erro ao parsear speaker_names para job {job.id}")
+
+    return text
 
 
 @router.post("/{job_id}", response_model=ChatResponse)
@@ -69,7 +97,10 @@ async def chat_with_transcription(
             detail=f"Transcrição não disponível. Status: {job.status}"
         )
 
-    # 2. Verificar se índice FAISS existe
+    # 2. Obter texto da transcrição com nomes customizados aplicados
+    transcription_text = get_transcription_text_with_custom_names(job)
+
+    # 3. Verificar se índice FAISS existe
     if not embeddings_service.index_exists(job_id):
         logger.warning(f"Índice FAISS não existe para job {job_id}, criando...")
 
@@ -77,7 +108,7 @@ async def chat_with_transcription(
         try:
             embeddings_service.create_index_for_job(
                 job_id=job_id,
-                text=job.transcription_text,
+                text=transcription_text,
                 metadata={"filename": job.filename}
             )
         except Exception as e:
@@ -87,7 +118,7 @@ async def chat_with_transcription(
                 detail="Erro ao preparar busca semântica"
             )
 
-    # 3. Buscar chunks relevantes
+    # 4. Buscar chunks relevantes
     try:
         search_results = embeddings_service.search(
             job_id=job_id,
@@ -113,7 +144,7 @@ async def chat_with_transcription(
             detail="Erro ao buscar contexto relevante"
         )
 
-    # 4. Preparar histórico de chat (se houver)
+    # 5. Preparar histórico de chat (se houver)
     chat_history = None
     if chat_request.chat_history:
         chat_history = [
@@ -121,7 +152,7 @@ async def chat_with_transcription(
             for msg in chat_request.chat_history
         ]
 
-    # 5. Gerar resposta com Azure OpenAI
+    # 6. Gerar resposta com Azure OpenAI
     try:
         answer = azure_openai_service.answer_question(
             question=chat_request.question,
@@ -140,7 +171,7 @@ async def chat_with_transcription(
             detail="Erro ao gerar resposta"
         )
 
-    # 6. Preparar fontes (chunks usados)
+    # 7. Preparar fontes (chunks usados)
     sources = [
         {
             "rank": result["rank"],

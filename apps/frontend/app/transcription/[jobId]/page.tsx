@@ -157,11 +157,25 @@ export default function TranscriptionPage() {
 
   const startEditingSpeakers = () => {
     if (!transcription) return
-    // Inicializar com nomes padrão (Speaker 1, Speaker 2, etc.)
+
+    // Extrair nomes atuais dos speakers da transcrição
     const initialNames: Record<string, string> = {}
     transcription.speakers.forEach((speaker) => {
-      initialNames[speaker.speaker_id.toString()] = `Speaker ${speaker.speaker_id}`
+      const speakerId = speaker.speaker_id.toString()
+
+      // Tentar extrair o nome do primeiro texto do speaker
+      const firstText = speaker.texts[0] || ''
+      const match = firstText.match(/^(.+?):\s/)
+
+      if (match) {
+        // Se encontrou um prefixo "Nome:", usar esse nome
+        initialNames[speakerId] = match[1]
+      } else {
+        // Senão, usar o nome padrão
+        initialNames[speakerId] = `Speaker ${speaker.speaker_id}`
+      }
     })
+
     setSpeakerNames(initialNames)
     setEditingMode('speakers')
   }
@@ -183,31 +197,8 @@ export default function TranscriptionPage() {
     try {
       await api.transcriptions.updateSpeakers(jobId, speakerNames)
 
-      // Atualizar transcrição localmente sem recarregar
-      if (transcription) {
-        const updatedTranscription = { ...transcription }
-
-        // Atualizar speakers com os novos nomes
-        updatedTranscription.speakers = transcription.speakers.map(speaker => ({
-          ...speaker,
-          texts: speaker.texts.map((text: string) =>
-            text.replace(
-              `Speaker ${speaker.speaker_id}`,
-              speakerNames[speaker.speaker_id.toString()] || `Speaker ${speaker.speaker_id}`
-            )
-          )
-        }))
-
-        // Atualizar full_text
-        let updatedFullText = transcription.full_text
-        Object.entries(speakerNames).forEach(([speakerId, customName]) => {
-          const regex = new RegExp(`Speaker ${speakerId}`, 'g')
-          updatedFullText = updatedFullText.replace(regex, customName)
-        })
-        updatedTranscription.full_text = updatedFullText
-
-        setTranscription(updatedTranscription)
-      }
+      // Recarregar transcrição do backend para obter os dados atualizados
+      await loadTranscription()
 
       alert('Nomes dos speakers atualizados com sucesso!')
       setEditingMode(null)

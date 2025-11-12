@@ -45,6 +45,7 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
       'video/quicktime': ['.mov'],
       'video/x-msvideo': ['.avi'],
       'video/webm': ['.webm'],
+      'video/x-ms-asf': ['.asf'],
     },
     maxSize: 500 * 1024 * 1024, // 500MB
     maxFiles: 1,
@@ -52,7 +53,7 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
     validator: (file) => {
       // Validação adicional por extensão (fallback se MIME type falhar)
       const ext = file.name.toLowerCase().split('.').pop()
-      const allowedExts = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'mp4', 'mov', 'avi', 'webm']
+      const allowedExts = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'mp4', 'mov', 'avi', 'webm', 'asf']
       if (!ext || !allowedExts.includes(ext)) {
         return {
           code: 'invalid-extension',
@@ -115,7 +116,7 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
                 Áudio: MP3, WAV, M4A, AAC, OGG
               </p>
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                Vídeo: MP4, MOV, AVI, WEBM
+                Vídeo: MP4, MOV, AVI, WEBM, ASF
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
                 Tamanho máximo: 500MB

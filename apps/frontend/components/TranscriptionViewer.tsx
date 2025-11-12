@@ -91,6 +91,11 @@ export default function TranscriptionViewer({
     return filtered.length > 0 ? filtered.join('\n\n') : 'Nenhum resultado encontrado'
   }
 
+  const removesSpeakerPrefixes = (text: string): string => {
+    // Remove prefixos "Nome: " ou "Speaker X: " do início de cada sentença
+    return text.replace(/(?:^|\s)([A-Za-z0-9\s]+):\s/g, ' ').trim()
+  }
+
   return (
     <div className="card">
       {/* Header */}
@@ -149,7 +154,7 @@ export default function TranscriptionViewer({
           /* Simple view */
           <div className="prose dark:prose-invert max-w-none">
             <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
-              {highlightSearch(filterText(fullText))}
+              {highlightSearch(removesSpeakerPrefixes(filterText(fullText)))}
             </p>
           </div>
         ) : (
